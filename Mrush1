@@ -18,7 +18,7 @@ CHANNEL_ID = '@asdfht12'  # Ваш канал
 # Список запрещённых слов (мат)
 FORBIDDEN_WORDS = {'сука', 'блять', 'пиздец', 'хуй', 'ебать'}
 
-# Словарь для отслеживания постов пользователей
+# Словарь для отслеживания успешных постов пользователей
 user_posts = {}
 
 # Функция проверки подписки на канал
@@ -34,7 +34,7 @@ async def check_subscription(context: ContextTypes, user_id: int) -> bool:
 def check_post_limit_and_duplicates(user_id: int, text: str) -> tuple[bool, str]:
     now = datetime.now()
     if user_id not in user_posts:
-        user_posts[user_id] = {"posts": [[text, now]], "count": 1, "date": now}
+        user_posts[user_id] = {"posts": [], "count": 0, "date": now}
         return True, ""
 
     user_data = user_posts[user_id]
@@ -50,31 +50,61 @@ def check_post_limit_and_duplicates(user_id: int, text: str) -> tuple[bool, str]
             if time_diff < timedelta(days=1):
                 hours_left = 24 - time_diff.total_seconds() // 3600
                 return False, f"❌ Этот пост уже публиковался. Повторная публикация возможна через {int(hours_left)} ч."
-            else:
-                user_data["posts"] = [p for p in user_data["posts"] if p[0] != text]
 
+    return True, ""
+
+# Функция добавления успешного поста
+def add_successful_post(user_id: int, text: str):
+    now = datetime.now()
+    user_data = user_posts[user_id]
     user_data["posts"].append([text, now])
     user_data["count"] += 1
     user_data["date"] = now
-    return True, ""
 
 # Функция проверки сообщения
 def check_message(text: str) -> tuple[bool, str]:
     text_lower = text.lower()
+
+    # Проверка наличия контактов
     if not re.search(r'@[a-zA-Z0-9_]{5,}', text):
         return False, "❌ В сообщении отсутствует контактная информация (@username). Добавьте свои контакты."
+
+    # Проверка ключевых действий
     actions = ['продам', 'обмен', 'куплю']
     if not any(action in text_lower for action in actions):
         return False, "❌ Укажите действие: 'продам', 'обмен' или 'куплю'."
+
+    # Проверка на упоминание почты
     mail_keywords = ['почта', 'почту', 'указ', 'утер', 'утерь', 'утеря']
     if not any(keyword in text_lower for keyword in mail_keywords):
         return False, "❌ Укажите информацию о почте (например, 'возможность указать свою почту')."
+
+    # Проверка на КАПС
     if sum(c.isupper() for c in text) / len(text) > 0.7 and len(text) > 10:
         return False, "❌ Слишком много текста в верхнем регистре (капс). Используйте обычный текст."
+
+    # Проверка на мат
     if any(word in text_lower for word in FORBIDDEN_WORDS):
         return False, "❌ В сообщении обнаружен запрещённый язык (мат). Уберите его."
+
+    # Проверка на ссылки
     if re.search(r'(https?://|www\.|\.com|\.ru|\.org|t\.me/[a-zA-Z0-9_]+)', text) and not re.search(r't\.me/shop_mrush1', text):
-        return False, "❌ Ссылки запрещены (кроме ссылок на правила группы). Уберите ссылку."
+        return False, "❌ Ссылки запрещены (кроме ссылки на правила группы t.me/shop_mrush1). Уберите ссылку."
+
+    # Проверка на упоминание ботов
+    if re.search(r'@[a-zA-Z0-9_]*bot\b', text_lower):
+        return False, "❌ Упоминания ботов запрещены."
+
+    # Проверка на упоминание других каналов (если это не контакт)
+    usernames = re.findall(r'@([a-zA-Z0-9_]{5,})', text)
+    for username in usernames:
+        if username.lower().endswith("bot"):
+            continue
+        if username.lower() not in text_lower:
+            continue
+        if username.lower() not in ['vardges_grigoryan']:  # Разрешённые @юзеры, можно добавить свои
+            return False, f"❌ Упоминание @{username} похоже на ссылку на канал/бот. Это запрещено."
+
     return True, "✅ Сообщение соответствует требованиям."
 
 # Команда /start
@@ -147,6 +177,7 @@ async def handle_text(update: Update, context: ContextTypes):
     is_valid, feedback = check_message(user_message)
     if is_valid:
         sent_message = await context.bot.send_message(chat_id=GROUP_CHAT_ID, text=user_message)
+        add_successful_post(user_id, user_message)
         await context.bot.send_message(
             chat_id=user_id,
             text="✅ Ваше объявление успешно опубликовано в группе!",
@@ -179,6 +210,7 @@ async def handle_photo(update: Update, context: ContextTypes):
     if is_valid:
         photo_file = update.message.photo[-1].file_id
         sent_message = await context.bot.send_photo(chat_id=GROUP_CHAT_ID, photo=photo_file, caption=caption)
+        add_successful_post(user_id, caption)
         await context.bot.send_message(
             chat_id=user_id,
             text="✅ Ваше объявление с фото успешно опубликовано в группе!",
@@ -189,7 +221,7 @@ async def handle_photo(update: Update, context: ContextTypes):
     else:
         await update.message.reply_text(f"{feedback}\n\nИсправьте сообщение и отправьте снова.")
 
-# Обработка нажатия кнопок
+# Обработка кнопок
 async def button_handler(update: Update, context: ContextTypes):
     query = update.callback_query
     await query.answer()
@@ -199,7 +231,6 @@ async def button_handler(update: Update, context: ContextTypes):
     elif query.data == "check_subscription":
         user_id = query.from_user.id
         if await check_subscription(context, user_id):
-            # Если пользователь подписался, удаляем сообщение и сразу отправляем приветствие
             await query.message.delete()
             await send_welcome_message(context, query.message.chat_id)
         else:
@@ -210,7 +241,7 @@ async def button_handler(update: Update, context: ContextTypes):
                 ])
             )
 
-# Ответ на неподдерживаемые типы сообщений
+# Неизвестные типы сообщений
 async def handle_unknown(update: Update, context: ContextTypes):
     user_id = update.message.from_user.id
     if not await check_subscription(context, user_id):
@@ -223,13 +254,13 @@ async def handle_unknown(update: Update, context: ContextTypes):
     else:
         await update.message.reply_text("❌ Извините, я могу обрабатывать только текст и изображения.")
 
-# Глобальный обработчик ошибок
+# Обработка ошибок
 async def error_handler(update: object, context: ContextTypes):
     logger.error(msg="Произошла ошибка:", exc_info=context.error)
     if isinstance(update, Update) and update.message:
         await update.message.reply_text("⚠️ Произошла непредвиденная ошибка. Мы уже разбираемся!")
 
-# Запуск бота
+# Запуск
 def main():
     application = Application.builder().token(TOKEN).build()
 
@@ -238,7 +269,6 @@ def main():
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(MessageHandler(filters.ALL, handle_unknown))
     application.add_handler(CallbackQueryHandler(button_handler))
-
     application.add_error_handler(error_handler)
 
     print("Бот запущен!")

@@ -10,42 +10,37 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Замените на ваш токен, ID группы и ID канала
 TOKEN = '7811217897:AAEkSqI8YrQ5OHtY6eA5Axgxoxuk0CdciiY'
 GROUP_CHAT_ID = '-1002685541538'
 CHANNEL_ID = '@asdfht12'
 
-# Рабочее время
 START_HOUR = 8
 END_HOUR = 24
 
-# Список запрещённых слов (мат)
 FORBIDDEN_WORDS = {'сука', 'блять', 'пиздец', 'хуй', 'ебать'}
 
-# Словарь для отслеживания успешных постов пользователей
 user_posts = {}
 
-# Главное меню (reply-клавиатура)
 MAIN_MENU = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton("🆘 Помощь")],
-        [KeyboardButton("👨‍💻 Написать администратору")]
+        [KeyboardButton("👨‍💻 Написать администратору")],
+        [KeyboardButton("📤 Разместить объявление")]
     ],
     resize_keyboard=True
 )
 
-# Кнопка «Назад в меню»
 BACK_BUTTON = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton("🔙 Назад в меню")]],
     resize_keyboard=True
 )
 
-# Проверка рабочего времени
+
 def is_within_working_hours() -> bool:
     now = datetime.now().hour
     return START_HOUR <= now < END_HOUR
 
-# Функция проверки подписки на канал
+
 async def check_subscription(context: ContextTypes, user_id: int) -> bool:
     try:
         member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
@@ -54,7 +49,7 @@ async def check_subscription(context: ContextTypes, user_id: int) -> bool:
         logger.error(f"Ошибка проверки подписки: {e}")
         return False
 
-# Функция проверки лимита постов и дубликатов
+
 def check_post_limit_and_duplicates(user_id: int, text: str) -> tuple[bool, str]:
     now = datetime.now()
     if user_id not in user_posts:
@@ -77,7 +72,7 @@ def check_post_limit_and_duplicates(user_id: int, text: str) -> tuple[bool, str]
 
     return True, ""
 
-# Добавление успешного поста
+
 def add_successful_post(user_id: int, text: str):
     now = datetime.now()
     user_data = user_posts[user_id]
@@ -85,43 +80,55 @@ def add_successful_post(user_id: int, text: str):
     user_data["count"] += 1
     user_data["date"] = now
 
-# Проверка сообщения
-def check_message(text: str) -> tuple[bool, str]:
-    text_lower = text.lower()
 
-    if not re.search(r'@[a-zA-Z0-9_]{5,}', text):
+def check_message(text: str, user_username: str) -> tuple[bool, str]:  # Добавлен параметр user_username
+    text_lower = text.lower()
+    user_username = user_username.lower() if user_username else ""
+
+    # Проверка наличия контакта
+    usernames = re.findall(r'@([a-zA-Z0-9_]{5,})', text)
+    if not usernames:
         return False, "❌ В сообщении отсутствует контактная информация (@username)."
 
+    # Проверка разрешенных действий
     actions = ['продам', 'обмен', 'куплю']
     if not any(action in text_lower for action in actions):
         return False, "❌ Укажите действие: 'продам', 'обмен' или 'куплю'."
 
+    # Проверка информации о почте
     mail_keywords = ['почта', 'почту', 'указ', 'утер', 'утерь', 'утеря']
     if not any(keyword in text_lower for keyword in mail_keywords):
         return False, "❌ Укажите информацию о почте."
 
+    # Проверка на капс
     if sum(c.isupper() for c in text) / len(text) > 0.7 and len(text) > 10:
         return False, "❌ Слишком много текста в верхнем регистре (капс)."
 
+    # Проверка на мат
     if any(word in text_lower for word in FORBIDDEN_WORDS):
         return False, "❌ Обнаружен мат. Уберите его."
 
-    if re.search(r'(https?://|www\.|\.com|\.ru|\.org|t\.me/[a-zA-Z0-9_]+)', text) and not re.search(r't\.me/shop_mrush1', text):
+    # Проверка ссылок
+    if re.search(r'(https?://|www\.|\.com|\.ru|\.org|t\.me/[a-zA-Z0-9_]+)', text) and not re.search(
+            r't\.me/shop_mrush1', text):
         return False, "❌ Ссылки запрещены (кроме t.me/shop_mrush1)."
 
+    # Проверка упоминаний ботов
     if re.search(r'@[a-zA-Z0-9_]*bot\b', text_lower):
         return False, "❌ Упоминания ботов запрещены."
 
-    usernames = re.findall(r'@([a-zA-Z0-9_]{5,})', text)
+    # Проверка разрешенных юзернеймов
     for username in usernames:
-        if username.lower().endswith("bot"):
+        username_lower = username.lower()
+        if username_lower.endswith("bot"):
             continue
-        if username.lower() not in ['vardges_grigoryan']:
-            return False, f"❌ Упоминание @{username} запрещено."
+        # Разрешаем юзернейм автора и vardges_grigoryan
+        if username_lower not in [user_username, 'vardges_grigoryan']:
+            return False, f"❌ Упоминание @{username} запрещено. Укажите свой контакт (@ваш_ник)."
 
     return True, "✅ Сообщение соответствует требованиям."
 
-# Команда /start
+
 async def start(update: Update, context: ContextTypes):
     if not is_within_working_hours():
         await update.message.reply_text("⏰ Бот работает с 8:00 до 00:00. Пожалуйста, напишите позже.")
@@ -139,7 +146,7 @@ async def start(update: Update, context: ContextTypes):
 
     await send_welcome_message(context, update.effective_chat.id)
 
-# Приветственное сообщение
+
 async def send_welcome_message(context: ContextTypes, chat_id: int):
     greeting = (
         "🤖 *Привет, я Mrush1* — бот для размещения объявлений о *покупке, продаже и обмене игровых аккаунтов*!\n\n"
@@ -171,7 +178,7 @@ async def send_welcome_message(context: ContextTypes, chat_id: int):
     except FileNotFoundError:
         await context.bot.send_message(chat_id=chat_id, text="⚠️ Не удалось найти пример изображения.")
 
-# Связь с админом
+
 async def contact_admin(update: Update, context: ContextTypes):
     if not is_within_working_hours():
         await update.message.reply_text("⏰ Бот работает с 8:00 до 00:00. Пожалуйста, напишите позже.")
@@ -182,7 +189,7 @@ async def contact_admin(update: Update, context: ContextTypes):
         reply_markup=BACK_BUTTON
     )
 
-# Помощь
+
 async def show_help(update: Update, context: ContextTypes):
     if not is_within_working_hours():
         await update.message.reply_text("⏰ Бот работает с 8:00 до 00:00. Пожалуйста, напишите позже.")
@@ -204,7 +211,54 @@ async def show_help(update: Update, context: ContextTypes):
 
     await update.message.reply_text(help_text, parse_mode="Markdown", reply_markup=BACK_BUTTON)
 
-# Обработка сообщений
+
+async def handle_post(update: Update, context: ContextTypes):
+    user_id = update.message.from_user.id
+    text = update.message.text
+    user_username = update.message.from_user.username  # Получаем username пользователя
+
+    # Проверка подписки
+    if not await check_subscription(context, user_id):
+        await update.message.reply_text(
+            f"❌ Чтобы разместить объявление, подпишись на канал {CHANNEL_ID}!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("Проверить подписку", callback_data="check_subscription")]
+            ])
+        )
+        return
+
+    # Проверка лимитов и дубликатов
+    limit_ok, limit_msg = check_post_limit_and_duplicates(user_id, text)
+    if not limit_ok:
+        await update.message.reply_text(limit_msg, reply_markup=MAIN_MENU)
+        return
+
+    # Проверка содержания сообщения (передаем username пользователя)
+    content_ok, content_msg = check_message(text, user_username)
+    if not content_ok:
+        await update.message.reply_text(content_msg, reply_markup=MAIN_MENU)
+        return
+
+    # Если все проверки пройдены, публикуем объявление
+    try:
+        await context.bot.send_message(
+            chat_id=CHANNEL_ID,
+            text=text,
+            parse_mode="Markdown"
+        )
+        add_successful_post(user_id, text)
+        await update.message.reply_text(
+            "✅ Ваше объявление успешно опубликовано!",
+            reply_markup=MAIN_MENU
+        )
+    except Exception as e:
+        logger.error(f"Ошибка при публикации объявления: {e}")
+        await update.message.reply_text(
+            "❌ Произошла ошибка при публикации объявления. Попробуйте позже.",
+            reply_markup=MAIN_MENU
+        )
+
+
 async def handle_message(update: Update, context: ContextTypes):
     if not is_within_working_hours():
         await update.message.reply_text("⏰ Бот работает с 8:00 до 00:00. Пожалуйста, напишите позже.")
@@ -217,10 +271,21 @@ async def handle_message(update: Update, context: ContextTypes):
         await show_help(update, context)
     elif text == "🔙 Назад в меню":
         await update.message.reply_text("🏠 Главное меню:", reply_markup=MAIN_MENU)
+    elif text == "📤 Разместить объявление":
+        await update.message.reply_text(
+            "📝 Отправьте текст вашего объявления. Убедитесь, что оно соответствует требованиям:",
+            reply_markup=BACK_BUTTON
+        )
+        # Устанавливаем состояние ожидания объявления
+        context.user_data['awaiting_post'] = True
+    elif context.user_data.get('awaiting_post', False):
+        # Если пользователь отправил текст объявления
+        await handle_post(update, context)
+        context.user_data['awaiting_post'] = False
     else:
         await update.message.reply_text("🔄 Пожалуйста, выберите действие 👇", reply_markup=MAIN_MENU)
 
-# Проверка подписки
+
 async def callback_query_handler(update: Update, context: ContextTypes):
     if not is_within_working_hours():
         await update.callback_query.message.reply_text("⏰ Бот работает с 8:00 до 00:00. Пожалуйста, напишите позже.")
@@ -236,7 +301,7 @@ async def callback_query_handler(update: Update, context: ContextTypes):
         else:
             await query.edit_message_text(f"❌ Подписка не найдена. Подпишитесь на {CHANNEL_ID} и повторите.")
 
-# Запуск
+
 def main():
     application = Application.builder().token(TOKEN).build()
 
@@ -246,6 +311,7 @@ def main():
 
     print("Бот запущен!")
     application.run_polling()
+
 
 if __name__ == '__main__':
     main()

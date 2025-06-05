@@ -1,7 +1,7 @@
 import logging
 import re
 from datetime import datetime, timedelta
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
 # Настройка логирования
@@ -13,13 +13,22 @@ logger = logging.getLogger(__name__)
 # Замените на ваш токен, ID группы и ID канала
 TOKEN = '7811217897:AAEkSqI8YrQ5OHtY6eA5Axgxoxuk0CdciiY'
 GROUP_CHAT_ID = '-1002685541538'
-CHANNEL_ID = '@asdfht12'  # Ваш канал
+CHANNEL_ID = '@asdfht12'
 
 # Список запрещённых слов (мат)
 FORBIDDEN_WORDS = {'сука', 'блять', 'пиздец', 'хуй', 'ебать'}
 
 # Словарь для отслеживания успешных постов пользователей
 user_posts = {}
+
+# Главное меню (reply-клавиатура)
+MAIN_MENU = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton("🆘 Помощь")],
+        [KeyboardButton("👨‍💻 Написать администратору")]
+    ],
+    resize_keyboard=True
+)
 
 # Функция проверки подписки на канал
 async def check_subscription(context: ContextTypes, user_id: int) -> bool:
@@ -65,44 +74,34 @@ def add_successful_post(user_id: int, text: str):
 def check_message(text: str) -> tuple[bool, str]:
     text_lower = text.lower()
 
-    # Проверка наличия контактов
     if not re.search(r'@[a-zA-Z0-9_]{5,}', text):
         return False, "❌ В сообщении отсутствует контактная информация (@username). Добавьте свои контакты."
 
-    # Проверка ключевых действий
     actions = ['продам', 'обмен', 'куплю']
     if not any(action in text_lower for action in actions):
         return False, "❌ Укажите действие: 'продам', 'обмен' или 'куплю'."
 
-    # Проверка на упоминание почты
     mail_keywords = ['почта', 'почту', 'указ', 'утер', 'утерь', 'утеря']
     if not any(keyword in text_lower for keyword in mail_keywords):
         return False, "❌ Укажите информацию о почте (например, 'возможность указать свою почту')."
 
-    # Проверка на КАПС
     if sum(c.isupper() for c in text) / len(text) > 0.7 and len(text) > 10:
         return False, "❌ Слишком много текста в верхнем регистре (капс). Используйте обычный текст."
 
-    # Проверка на мат
     if any(word in text_lower for word in FORBIDDEN_WORDS):
         return False, "❌ В сообщении обнаружен запрещённый язык (мат). Уберите его."
 
-    # Проверка на ссылки
     if re.search(r'(https?://|www\.|\.com|\.ru|\.org|t\.me/[a-zA-Z0-9_]+)', text) and not re.search(r't\.me/shop_mrush1', text):
         return False, "❌ Ссылки запрещены (кроме ссылки на правила группы t.me/shop_mrush1). Уберите ссылку."
 
-    # Проверка на упоминание ботов
     if re.search(r'@[a-zA-Z0-9_]*bot\b', text_lower):
         return False, "❌ Упоминания ботов запрещены."
 
-    # Проверка на упоминание других каналов (если это не контакт)
     usernames = re.findall(r'@([a-zA-Z0-9_]{5,})', text)
     for username in usernames:
         if username.lower().endswith("bot"):
             continue
-        if username.lower() not in text_lower:
-            continue
-        if username.lower() not in ['vardges_grigoryan']:  # Разрешённые @юзеры, можно добавить свои
+        if username.lower() not in ['vardges_grigoryan']:
             return False, f"❌ Упоминание @{username} похоже на ссылку на канал/бот. Это запрещено."
 
     return True, "✅ Сообщение соответствует требованиям."
@@ -121,22 +120,22 @@ async def start(update: Update, context: ContextTypes):
 
     await send_welcome_message(context, update.effective_chat.id)
 
-# Функция отправки приветствия и примера
+# Приветственное сообщение
 async def send_welcome_message(context: ContextTypes, chat_id: int):
     greeting = (
         "🤖 *Привет, я Mrush1* — бот для размещения объявлений о *покупке, продаже и обмене игровых аккаунтов*!\n\n"
-        "📌 Прежде чем продолжить, *обязательно ознакомься с правилами*:\n"
+        "📌 Ознакомься с правилами:\n"
         "🔗 [Правила группы](https://t.me/shop_mrush1/11)\n"
         "🔗 [Как правильно подать заявку](https://t.me/shop_mrush1/13)\n\n"
-        "⚠️ Несоблюдение правил может привести к отклонению поста или блокировке!\n\n"
-        "📸 *Вот пример, как должен выглядеть пост:*"
+        "📸 *Вот пример поста:*"
     )
 
     await context.bot.send_message(
         chat_id=chat_id,
         text=greeting,
         parse_mode="Markdown",
-        disable_web_page_preview=True
+        disable_web_page_preview=True,
+        reply_markup=MAIN_MENU
     )
 
     try:
@@ -151,125 +150,76 @@ async def send_welcome_message(context: ContextTypes, chat_id: int):
                 )
             )
     except FileNotFoundError:
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="⚠️ Не удалось найти пример изображения. Убедись, что файл существует."
-        )
+        await context.bot.send_message(chat_id=chat_id, text="⚠️ Не удалось найти пример изображения.")
 
-# Обработка текстовых сообщений
-async def handle_text(update: Update, context: ContextTypes):
-    user_id = update.message.from_user.id
-    if not await check_subscription(context, user_id):
-        await update.message.reply_text(
-            f"❌ Чтобы отправлять объявления, подпишись на канал {CHANNEL_ID}!\nПосле подписки нажми кнопку ниже.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("Проверить подписку", callback_data="check_subscription")]
-            ])
-        )
-        return
+# Связь с админом
+async def contact_admin(update: Update, context: ContextTypes):
+    await update.message.reply_text(
+        "👨‍💻 Если у вас возникли вопросы, проблемы с публикацией или предложения — пишите администратору: @vardges_grigoryan",
+        reply_markup=MAIN_MENU
+    )
 
-    user_message = update.message.text
-    limit_ok, limit_feedback = check_post_limit_and_duplicates(user_id, user_message)
-    if not limit_ok:
-        await update.message.reply_text(limit_feedback)
-        return
+# Помощь
+async def show_help(update: Update, context: ContextTypes):
+    help_text = (
+        "🆘 *Как пользоваться ботом Mrush1*\n\n"
+        "🤖 Бот создан для быстрой публикации объявлений по продаже, обмену и покупке игровых аккаунтов. Вот как им пользоваться:\n\n"
+        "1️⃣ Подпишитесь на канал: @asdfht12\n"
+        "2️⃣ Нажмите /start — получите правила и пример объявления\n"
+        "3️⃣ Отправьте объявление боту в формате текста или фото с подписью\n\n"
+        "📌 Объявление должно содержать:\n"
+        "— Ваш контакт (например, @ваш_ник)\n"
+        "— Слова вроде: продам, куплю, обмен\n"
+        "— Указание на наличие или возможность указать почту\n"
+        "— Без мата, капса, ссылок и ботов\n\n"
+        "⚠️ Ограничения:\n"
+        "— Не более 3 постов в сутки\n"
+        "— Нельзя дублировать одно и то же объявление чаще, чем раз в 24 часа\n"
+        "— Разрешена только одна ссылка: t.me/shop_mrush1\n\n"
+        "🔍 Проверьте пост перед отправкой — бот всё модератит автоматически.\n\n"
+        "❓ Остались вопросы? Нажмите «👨‍💻 Написать администратору»."
+    )
 
-    is_valid, feedback = check_message(user_message)
-    if is_valid:
-        sent_message = await context.bot.send_message(chat_id=GROUP_CHAT_ID, text=user_message)
-        add_successful_post(user_id, user_message)
-        await context.bot.send_message(
-            chat_id=user_id,
-            text="✅ Ваше объявление успешно опубликовано в группе!",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("Разместить новое объявление", callback_data="new_post")]
-            ])
-        )
+    await update.message.reply_text(help_text, parse_mode="Markdown", reply_markup=MAIN_MENU)
+
+# Обработка входящих сообщений с кнопок
+async def handle_message(update: Update, context: ContextTypes):
+    text = update.message.text
+    if text == "👨‍💻 Написать администратору":
+        await contact_admin(update, context)
+    elif text == "🆘 Помощь":
+        await show_help(update, context)
     else:
-        await update.message.reply_text(f"{feedback}\n\nИсправьте сообщение и отправьте снова.")
-
-# Обработка фото с подписью
-async def handle_photo(update: Update, context: ContextTypes):
-    user_id = update.message.from_user.id
-    if not await check_subscription(context, user_id):
         await update.message.reply_text(
-            f"❌ Чтобы отправлять объявления, подпишись на канал {CHANNEL_ID}!\nПосле подписки нажми кнопку ниже.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("Проверить подписку", callback_data="check_subscription")]
-            ])
+            "🔄 Пожалуйста, выберите действие с помощью кнопки ниже 👇",
+            reply_markup=MAIN_MENU
         )
-        return
 
-    caption = update.message.caption if update.message.caption else ""
-    limit_ok, limit_feedback = check_post_limit_and_duplicates(user_id, caption)
-    if not limit_ok:
-        await update.message.reply_text(limit_feedback)
-        return
-
-    is_valid, feedback = check_message(caption)
-    if is_valid:
-        photo_file = update.message.photo[-1].file_id
-        sent_message = await context.bot.send_photo(chat_id=GROUP_CHAT_ID, photo=photo_file, caption=caption)
-        add_successful_post(user_id, caption)
-        await context.bot.send_message(
-            chat_id=user_id,
-            text="✅ Ваше объявление с фото успешно опубликовано в группе!",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("Разместить новое объявление", callback_data="new_post")]
-            ])
-        )
-    else:
-        await update.message.reply_text(f"{feedback}\n\nИсправьте сообщение и отправьте снова.")
-
-# Обработка кнопок
-async def button_handler(update: Update, context: ContextTypes):
+# Обработчик callback_query для проверки подписки
+async def callback_query_handler(update: Update, context: ContextTypes):
     query = update.callback_query
     await query.answer()
-
-    if query.data == "new_post":
-        await query.message.reply_text("📝 Отправьте новое объявление (текст или фото с подписью):")
-    elif query.data == "check_subscription":
+    if query.data == "check_subscription":
         user_id = query.from_user.id
         if await check_subscription(context, user_id):
-            await query.message.delete()
+            await query.edit_message_text(
+                "✅ Подписка подтверждена! Теперь можно пользоваться ботом."
+            )
             await send_welcome_message(context, query.message.chat_id)
         else:
-            await query.message.edit_text(
-                f"❌ Ты ещё не подписан на {CHANNEL_ID}. Подпишись и попробуй снова!",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("Проверить подписку", callback_data="check_subscription")]
-                ])
+            await query.edit_message_text(
+                f"❌ Подписка не найдена. Пожалуйста, подпишитесь на канал {CHANNEL_ID} и повторите проверку."
             )
-
-# Неизвестные типы сообщений
-async def handle_unknown(update: Update, context: ContextTypes):
-    user_id = update.message.from_user.id
-    if not await check_subscription(context, user_id):
-        await update.message.reply_text(
-            f"❌ Чтобы использовать бота, подпишись на канал {CHANNEL_ID}!\nПосле подписки нажми кнопку ниже.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("Проверить подписку", callback_data="check_subscription")]
-            ])
-        )
-    else:
-        await update.message.reply_text("❌ Извините, я могу обрабатывать только текст и изображения.")
-
-# Обработка ошибок
-async def error_handler(update: object, context: ContextTypes):
-    logger.error(msg="Произошла ошибка:", exc_info=context.error)
-    if isinstance(update, Update) and update.message:
-        await update.message.reply_text("⚠️ Произошла непредвиденная ошибка. Мы уже разбираемся!")
 
 # Запуск
 def main():
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    application.add_handler(MessageHandler(filters.ALL, handle_unknown))
-    application.add_handler(CallbackQueryHandler(button_handler))
-    application.add_error_handler(error_handler)
+    application.add_handler(CallbackQueryHandler(callback_query_handler))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"^👨‍💻 Написать администратору$"), contact_admin))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"^🆘 Помощь$"), show_help))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("Бот запущен!")
     application.run_polling()

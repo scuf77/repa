@@ -15,6 +15,10 @@ TOKEN = '7811217897:AAEkSqI8YrQ5OHtY6eA5Axgxoxuk0CdciiY'
 GROUP_CHAT_ID = '-1002685541538'
 CHANNEL_ID = '@asdfht12'
 
+# Рабочее время
+START_HOUR = 8
+END_HOUR = 24
+
 # Список запрещённых слов (мат)
 FORBIDDEN_WORDS = {'сука', 'блять', 'пиздец', 'хуй', 'ебать'}
 
@@ -29,6 +33,17 @@ MAIN_MENU = ReplyKeyboardMarkup(
     ],
     resize_keyboard=True
 )
+
+# Кнопка «Назад в меню»
+BACK_BUTTON = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton("🔙 Назад в меню")]],
+    resize_keyboard=True
+)
+
+# Проверка рабочего времени
+def is_within_working_hours() -> bool:
+    now = datetime.now().hour
+    return START_HOUR <= now < END_HOUR
 
 # Функция проверки подписки на канал
 async def check_subscription(context: ContextTypes, user_id: int) -> bool:
@@ -62,7 +77,7 @@ def check_post_limit_and_duplicates(user_id: int, text: str) -> tuple[bool, str]
 
     return True, ""
 
-# Функция добавления успешного поста
+# Добавление успешного поста
 def add_successful_post(user_id: int, text: str):
     now = datetime.now()
     user_data = user_posts[user_id]
@@ -70,12 +85,12 @@ def add_successful_post(user_id: int, text: str):
     user_data["count"] += 1
     user_data["date"] = now
 
-# Функция проверки сообщения
+# Проверка сообщения
 def check_message(text: str) -> tuple[bool, str]:
     text_lower = text.lower()
 
     if not re.search(r'@[a-zA-Z0-9_]{5,}', text):
-        return False, "❌ В сообщении отсутствует контактная информация (@username). Добавьте свои контакты."
+        return False, "❌ В сообщении отсутствует контактная информация (@username)."
 
     actions = ['продам', 'обмен', 'куплю']
     if not any(action in text_lower for action in actions):
@@ -83,16 +98,16 @@ def check_message(text: str) -> tuple[bool, str]:
 
     mail_keywords = ['почта', 'почту', 'указ', 'утер', 'утерь', 'утеря']
     if not any(keyword in text_lower for keyword in mail_keywords):
-        return False, "❌ Укажите информацию о почте (например, 'возможность указать свою почту')."
+        return False, "❌ Укажите информацию о почте."
 
     if sum(c.isupper() for c in text) / len(text) > 0.7 and len(text) > 10:
-        return False, "❌ Слишком много текста в верхнем регистре (капс). Используйте обычный текст."
+        return False, "❌ Слишком много текста в верхнем регистре (капс)."
 
     if any(word in text_lower for word in FORBIDDEN_WORDS):
-        return False, "❌ В сообщении обнаружен запрещённый язык (мат). Уберите его."
+        return False, "❌ Обнаружен мат. Уберите его."
 
     if re.search(r'(https?://|www\.|\.com|\.ru|\.org|t\.me/[a-zA-Z0-9_]+)', text) and not re.search(r't\.me/shop_mrush1', text):
-        return False, "❌ Ссылки запрещены (кроме ссылки на правила группы t.me/shop_mrush1). Уберите ссылку."
+        return False, "❌ Ссылки запрещены (кроме t.me/shop_mrush1)."
 
     if re.search(r'@[a-zA-Z0-9_]*bot\b', text_lower):
         return False, "❌ Упоминания ботов запрещены."
@@ -102,16 +117,20 @@ def check_message(text: str) -> tuple[bool, str]:
         if username.lower().endswith("bot"):
             continue
         if username.lower() not in ['vardges_grigoryan']:
-            return False, f"❌ Упоминание @{username} похоже на ссылку на канал/бот. Это запрещено."
+            return False, f"❌ Упоминание @{username} запрещено."
 
     return True, "✅ Сообщение соответствует требованиям."
 
 # Команда /start
 async def start(update: Update, context: ContextTypes):
+    if not is_within_working_hours():
+        await update.message.reply_text("⏰ Бот работает с 8:00 до 00:00. Пожалуйста, напишите позже.")
+        return
+
     user_id = update.message.from_user.id
     if not await check_subscription(context, user_id):
         await update.message.reply_text(
-            f"❌ Чтобы начать, подпишись на канал {CHANNEL_ID}!\nПосле подписки нажми кнопку ниже.",
+            f"❌ Чтобы начать, подпишись на канал {CHANNEL_ID}!",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("Проверить подписку", callback_data="check_subscription")]
             ])
@@ -154,62 +173,68 @@ async def send_welcome_message(context: ContextTypes, chat_id: int):
 
 # Связь с админом
 async def contact_admin(update: Update, context: ContextTypes):
+    if not is_within_working_hours():
+        await update.message.reply_text("⏰ Бот работает с 8:00 до 00:00. Пожалуйста, напишите позже.")
+        return
+
     await update.message.reply_text(
-        "👨‍💻 Если у вас возникли вопросы, проблемы с публикацией или предложения — пишите администратору: @vardges_grigoryan",
-        reply_markup=MAIN_MENU
+        "👨‍💻 Если у вас возникли вопросы — пишите администратору: @vardges_grigoryan",
+        reply_markup=BACK_BUTTON
     )
 
 # Помощь
 async def show_help(update: Update, context: ContextTypes):
+    if not is_within_working_hours():
+        await update.message.reply_text("⏰ Бот работает с 8:00 до 00:00. Пожалуйста, напишите позже.")
+        return
+
     help_text = (
         "🆘 *Как пользоваться ботом Mrush1*\n\n"
-        "🤖 Бот создан для быстрой публикации объявлений по продаже, обмену и покупке игровых аккаунтов. Вот как им пользоваться:\n\n"
         "1️⃣ Подпишитесь на канал: @asdfht12\n"
-        "2️⃣ Нажмите /start — получите правила и пример объявления\n"
-        "3️⃣ Отправьте объявление боту в формате текста или фото с подписью\n\n"
-        "📌 Объявление должно содержать:\n"
-        "— Ваш контакт (например, @ваш_ник)\n"
-        "— Слова вроде: продам, куплю, обмен\n"
-        "— Указание на наличие или возможность указать почту\n"
-        "— Без мата, капса, ссылок и ботов\n\n"
-        "⚠️ Ограничения:\n"
-        "— Не более 3 постов в сутки\n"
-        "— Нельзя дублировать одно и то же объявление чаще, чем раз в 24 часа\n"
-        "— Разрешена только одна ссылка: t.me/shop_mrush1\n\n"
-        "🔍 Проверьте пост перед отправкой — бот всё модератит автоматически.\n\n"
-        "❓ Остались вопросы? Нажмите «👨‍💻 Написать администратору»."
+        "2️⃣ Нажмите /start\n"
+        "3️⃣ Отправьте объявление боту\n\n"
+        "⚠️ Требования к постам:\n"
+        "— Контакт (@ваш_ник)\n"
+        "— Слова: продам, куплю, обмен\n"
+        "— Почта (указание, что можно сменить)\n"
+        "— Без мата, капса, ссылок и ботов\n"
+        "— Только t.me/shop_mrush1 разрешён\n\n"
+        "💬 Остались вопросы? Нажмите «👨‍💻 Написать администратору»"
     )
 
-    await update.message.reply_text(help_text, parse_mode="Markdown", reply_markup=MAIN_MENU)
+    await update.message.reply_text(help_text, parse_mode="Markdown", reply_markup=BACK_BUTTON)
 
-# Обработка входящих сообщений с кнопок
+# Обработка сообщений
 async def handle_message(update: Update, context: ContextTypes):
+    if not is_within_working_hours():
+        await update.message.reply_text("⏰ Бот работает с 8:00 до 00:00. Пожалуйста, напишите позже.")
+        return
+
     text = update.message.text
     if text == "👨‍💻 Написать администратору":
         await contact_admin(update, context)
     elif text == "🆘 Помощь":
         await show_help(update, context)
+    elif text == "🔙 Назад в меню":
+        await update.message.reply_text("🏠 Главное меню:", reply_markup=MAIN_MENU)
     else:
-        await update.message.reply_text(
-            "🔄 Пожалуйста, выберите действие с помощью кнопки ниже 👇",
-            reply_markup=MAIN_MENU
-        )
+        await update.message.reply_text("🔄 Пожалуйста, выберите действие 👇", reply_markup=MAIN_MENU)
 
-# Обработчик callback_query для проверки подписки
+# Проверка подписки
 async def callback_query_handler(update: Update, context: ContextTypes):
+    if not is_within_working_hours():
+        await update.callback_query.message.reply_text("⏰ Бот работает с 8:00 до 00:00. Пожалуйста, напишите позже.")
+        return
+
     query = update.callback_query
     await query.answer()
     if query.data == "check_subscription":
         user_id = query.from_user.id
         if await check_subscription(context, user_id):
-            await query.edit_message_text(
-                "✅ Подписка подтверждена! Теперь можно пользоваться ботом."
-            )
+            await query.edit_message_text("✅ Подписка подтверждена!")
             await send_welcome_message(context, query.message.chat_id)
         else:
-            await query.edit_message_text(
-                f"❌ Подписка не найдена. Пожалуйста, подпишитесь на канал {CHANNEL_ID} и повторите проверку."
-            )
+            await query.edit_message_text(f"❌ Подписка не найдена. Подпишитесь на {CHANNEL_ID} и повторите.")
 
 # Запуск
 def main():
@@ -217,9 +242,7 @@ def main():
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(callback_query_handler))
-    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"^👨‍💻 Написать администратору$"), contact_admin))
-    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"^🆘 Помощь$"), show_help))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(MessageHandler(filters.TEXT, handle_message))
 
     print("Бот запущен!")
     application.run_polling()

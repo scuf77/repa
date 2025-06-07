@@ -19,6 +19,8 @@ END_HOUR = 23
 
 FORBIDDEN_WORDS = {'сука', 'блять', 'пиздец', 'хуй', 'ебать'}
 
+ALLOWED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif'}
+
 user_posts = {}
 
 MAIN_MENU = ReplyKeyboardMarkup(
@@ -81,7 +83,7 @@ def add_successful_post(user_id: int, text: str):
     user_data["date"] = now
 
 
-def check_message(text: str, user_username: str) -> tuple[bool, str]:  # Добавлен параметр user_username
+def check_message(text: str, user_username: str) -> tuple[bool, str]:
     text_lower = text.lower()
     user_username = user_username.lower() if user_username else ""
 
@@ -127,6 +129,12 @@ def check_message(text: str, user_username: str) -> tuple[bool, str]:  # Доб�
             return False, f"❌ Упоминание @{username} запрещено. Укажите свой контакт (@ваш_ник)."
 
     return True, "✅ Сообщение соответствует требованиям."
+
+
+def check_file_extension(file_name: str) -> bool:
+    if not file_name:
+        return False
+    return any(file_name.lower().endswith(ext) for ext in ALLOWED_IMAGE_EXTENSIONS)
 
 
 async def start(update: Update, context: ContextTypes):
@@ -199,12 +207,12 @@ async def show_help(update: Update, context: ContextTypes):
         "📌 Как правильно подать объявление? Просто выполни несколько простых пунктов! ✅\n\n"
         "1. Подпишись на канал: @asdfht12\n"
         "2. Нажми /start\n"
-        "3. Отправь объявление боту\n\n"
+        "3. Отправь объявление боту (текст и, при желании, фото в формате JPG, JPEG, PNG или GIF)\n\n"
         "⚠ Требования к постам:\n"
         "- Цель (продам/куплю/обмен)\n"
         "- Цена или бюджет (Продаю за 1000₽/Куплю до 500₽/Меняю + доплата 300₽)\n"
         "- Почта (есть/утеряна/можно указать свою)\n"
-        "- Скриншот (по желанию можно прикрепить фото аккаунта)\n"
+        "- Фото (по желанию, только JPG, JPEG, PNG, GIF)\n"
         "- Без мата, капса, ссылок и ботов\n"
         "- Ваш контакт в Telegram (@ваш_ник)\n\n"
         "💬 Остались вопросы? Нажмите «👨‍💻 Написать администратору»"
@@ -215,8 +223,8 @@ async def show_help(update: Update, context: ContextTypes):
 
 async def handle_post(update: Update, context: ContextTypes):
     user_id = update.message.from_user.id
-    text = update.message.text
-    user_username = update.message.from_user.username  # Получаем username пользователя
+    text = update.message.text or update.message.caption or ""
+    user_username = update.message.from_user.username
 
     # Проверка подписки
     if not await check_subscription(context, user_id):
@@ -234,19 +242,48 @@ async def handle_post(update: Update, context: ContextTypes):
         await update.message.reply_text(limit_msg, reply_markup=MAIN_MENU)
         return
 
-    # Проверка содержания сообщения (передаем username пользователя)
+    # Проверка содержания сообщения
     content_ok, content_msg = check_message(text, user_username)
     if not content_ok:
         await update.message.reply_text(content_msg, reply_markup=MAIN_MENU)
         return
 
-    # Если все проверки пройдены, публикуем объявление
-    try:
-        await context.bot.send_message(
-            chat_id=CHANNEL_ID,
-            text=text,
-            parse_mode="Markdown"
+    # Проверка прикрепленных файлов
+    photos = update.message.photo
+    document = update.message.document
+    if document and not check_file_extension(document.file_name):
+        await update.message.reply_text(
+            "❌ Прикреплены недопустимые файлы. Разрешены только изображения (JPG, JPEG, PNG, GIF).",
+            reply_markup=MAIN_MENU
         )
+        return
+
+    # Публикация объявления
+    try:
+        if photos:
+            # Отправляем фото с подписью
+            await context.bot.send_photo(
+                chat_id=CHANNEL_ID,
+                photo=photos[-1].file_id,  # Используем последнее фото (наивысшее качество)
+                caption=text,
+                parse_mode="Markdown"
+            )
+        elif document:
+            # Отправляем документ (изображение) с подписью
+            await context.bot.send_document(
+                chat_id=CHANNEL_ID,
+                document=document.file_id,
+                caption=text,
+                parse_mode="Markdown"
+            )
+        else:
+            # Отправляем только текст
+            await context.bot.send_message(
+                chat_id=CHANNEL_ID,
+                text=text,
+                parse_mode="Markdown"
+            )
+
         add_successful_post(user_id, text)
         await update.message.reply_text(
             "✅ Ваше объявление успешно опубликовано!",
@@ -274,13 +311,13 @@ async def handle_message(update: Update, context: ContextTypes):
         await update.message.reply_text("🏠 Главное меню:", reply_markup=MAIN_MENU)
     elif text == "📤 Разместить объявление":
         await update.message.reply_text(
-            "📝 Отправьте текст вашего объявления. Убедитесь, что оно соответствует требованиям:",
+            "📝 Отправьте текст вашего объявления и, при желании, прикрепите фото (JPG, JPEG, PNG, GIF).",
             reply_markup=BACK_BUTTON
         )
         # Устанавливаем состояние ожидания объявления
         context.user_data['awaiting_post'] = True
     elif context.user_data.get('awaiting_post', False):
-        # Если пользователь отправил текст объявления
+        # Если пользователь отправил объявление (текст или текст с фото)
         await handle_post(update, context)
         context.user_data['awaiting_post'] = False
     else:
@@ -308,7 +345,7 @@ def main():
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(callback_query_handler))
-    application.add_handler(MessageHandler(filters.TEXT, handle_message))
+    application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.IMAGE, handle_message))
 
     print("Бот запущен!")
     application.run_polling()

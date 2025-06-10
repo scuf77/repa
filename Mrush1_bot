@@ -37,11 +37,9 @@ BACK_BUTTON = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-
 def is_within_working_hours() -> bool:
     now = datetime.now().hour
     return START_HOUR <= now < END_HOUR
-
 
 async def check_subscription(context: ContextTypes, user_id: int) -> bool:
     try:
@@ -50,7 +48,6 @@ async def check_subscription(context: ContextTypes, user_id: int) -> bool:
     except Exception as e:
         logger.error(f"Ошибка проверки подписки: {e}")
         return False
-
 
 def check_post_limit_and_duplicates(user_id: int, text: str) -> tuple[bool, str]:
     now = datetime.now()
@@ -74,14 +71,12 @@ def check_post_limit_and_duplicates(user_id: int, text: str) -> tuple[bool, str]
 
     return True, ""
 
-
 def add_successful_post(user_id: int, text: str):
     now = datetime.now()
     user_data = user_posts[user_id]
     user_data["posts"].append([text, now])
     user_data["count"] += 1
     user_data["date"] = now
-
 
 def check_message(text: str, user_username: str) -> tuple[bool, str]:
     text_lower = text.lower()
@@ -98,9 +93,9 @@ def check_message(text: str, user_username: str) -> tuple[bool, str]:
         return False, "❌ Укажите действие: 'продам', 'обмен' или 'куплю'."
 
     # Проверка информации о почте
-    mail_keywords = ['почта', 'почту', 'указ', 'утер', 'утерь', 'утеря']
+    mail_keywords = ['почта', 'почту', 'указ', 'утер', 'утерь', 'утеря', 'оки', 'ок ру', 'ок.ру', 'одноклассники', 'спакес', 'однокласники', 'одноклассника', 'однокласника', 'одноклассников', 'однокла сников']
     if not any(keyword in text_lower for keyword in mail_keywords):
-        return False, "❌ Укажите информацию о почте."
+        return False, "❌ Укажите информацию о привязках."
 
     # Проверка на капс
     if sum(c.isupper() for c in text) / len(text) > 0.7 and len(text) > 10:
@@ -124,18 +119,15 @@ def check_message(text: str, user_username: str) -> tuple[bool, str]:
         username_lower = username.lower()
         if username_lower.endswith("bot"):
             continue
-        # Разрешаем юзернейм автора и vardges_grigoryan
         if username_lower not in [user_username, 'vardges_grigoryan']:
             return False, f"❌ Упоминание @{username} запрещено. Укажите свой контакт (@ваш_ник)."
 
     return True, "✅ Сообщение соответствует требованиям."
 
-
 def check_file_extension(file_name: str) -> bool:
     if not file_name:
         return False
     return any(file_name.lower().endswith(ext) for ext in ALLOWED_IMAGE_EXTENSIONS)
-
 
 async def start(update: Update, context: ContextTypes):
     if not is_within_working_hours():
@@ -153,7 +145,6 @@ async def start(update: Update, context: ContextTypes):
         return
 
     await send_welcome_message(context, update.effective_chat.id)
-
 
 async def send_welcome_message(context: ContextTypes, chat_id: int):
     greeting = (
@@ -186,7 +177,6 @@ async def send_welcome_message(context: ContextTypes, chat_id: int):
     except FileNotFoundError:
         await context.bot.send_message(chat_id=chat_id, text="⚠️ Не удалось найти пример изображения.")
 
-
 async def contact_admin(update: Update, context: ContextTypes):
     if not is_within_working_hours():
         await update.message.reply_text("⏰ Бот работает с 8:00 до 23:00. Пожалуйста, напишите позже.")
@@ -196,7 +186,6 @@ async def contact_admin(update: Update, context: ContextTypes):
         "👨‍💻 Если у вас возникли вопросы — пишите администратору: @vardges_grigoryan",
         reply_markup=BACK_BUTTON
     )
-
 
 async def show_help(update: Update, context: ContextTypes):
     if not is_within_working_hours():
@@ -219,7 +208,6 @@ async def show_help(update: Update, context: ContextTypes):
     )
 
     await update.message.reply_text(help_text, reply_markup=BACK_BUTTON)
-
 
 async def handle_post(update: Update, context: ContextTypes):
     user_id = update.message.from_user.id
@@ -261,27 +249,21 @@ async def handle_post(update: Update, context: ContextTypes):
     # Публикация объявления
     try:
         if photos:
-            # Отправляем фото с подписью
             await context.bot.send_photo(
                 chat_id=CHANNEL_ID,
-                photo=photos[-1].file_id,  # Используем последнее фото (наивысшее качество)
-                caption=text,
-                parse_mode="Markdown"
+                photo=photos[-1].file_id,
+                caption=text  # Убрано parse_mode="Markdown" для избежания ошибок с сущностями
             )
         elif document:
-            # Отправляем документ (изображение) с подписью
             await context.bot.send_document(
                 chat_id=CHANNEL_ID,
                 document=document.file_id,
-                caption=text,
-                parse_mode="Markdown"
+                caption=text  # Убрано parse_mode="Markdown"
             )
         else:
-            # Отправляем только текст
             await context.bot.send_message(
                 chat_id=CHANNEL_ID,
-                text=text,
-                parse_mode="Markdown"
+                text=text
             )
 
         add_successful_post(user_id, text)
@@ -295,7 +277,6 @@ async def handle_post(update: Update, context: ContextTypes):
             "❌ Произошла ошибка при публикации объявления. Попробуйте позже.",
             reply_markup=MAIN_MENU
         )
-
 
 async def handle_message(update: Update, context: ContextTypes):
     if not is_within_working_hours():
@@ -314,15 +295,13 @@ async def handle_message(update: Update, context: ContextTypes):
             "📝 Отправьте текст вашего объявления и, при желании, прикрепите фото Вашего аккаунта.",
             reply_markup=BACK_BUTTON
         )
-        # Устанавливаем состояние ожидания объявления
         context.user_data['awaiting_post'] = True
     elif context.user_data.get('awaiting_post', False):
-        # Если пользователь отправил объявление (текст или текст с фото)
+        # Обработка текста, фото или документа
         await handle_post(update, context)
         context.user_data['awaiting_post'] = False
     else:
         await update.message.reply_text("🔄 Пожалуйста, выберите действие 👇", reply_markup=MAIN_MENU)
-
 
 async def callback_query_handler(update: Update, context: ContextTypes):
     if not is_within_working_hours():
@@ -339,7 +318,6 @@ async def callback_query_handler(update: Update, context: ContextTypes):
         else:
             await query.edit_message_text(f"❌ Подписка не найдена. Подпишитесь на {CHANNEL_ID} и повторите.")
 
-
 def main():
     application = Application.builder().token(TOKEN).build()
 
@@ -349,7 +327,6 @@ def main():
 
     print("Бот запущен!")
     application.run_polling()
-
 
 if __name__ == '__main__':
     main()

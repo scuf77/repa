@@ -100,7 +100,7 @@ def check_message(text: str, user_username: str) -> tuple[bool, str]:
     # Проверка на капс
     if sum(c.isupper() for c in text) / len(text) > 0.7 and len(text) > 10:
         return False, "❌ Слишком много текста в верхнем регистре (капс)."
-
+ 
     # Проверка на мат
     if any(word in text_lower for word in FORBIDDEN_WORDS):
         return False, "❌ Обнаружен мат. Уберите его."

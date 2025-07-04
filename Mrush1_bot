@@ -4,13 +4,12 @@ from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
-# Настройка логирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-TOKEN = '7811217897:AAEkSqI8YrQ5OHtY6eA5Axgxoxuk0CdciiY'
+TOKEN = '7811217897:AAHW40UG0IgjjRINGC9s5ycpydwsDpQiOsk'
 GROUP_CHAT_ID = '644710593'
 CHANNEL_ID = '@shop_mrush1'
 
@@ -84,39 +83,38 @@ def check_message(text: str, user_username: str) -> tuple[bool, str]:
     text_lower = text.lower()
     user_username = user_username.lower() if user_username else ""
 
-    # Проверка наличия контакта
+    # Проверка на наличие хэштега #офтоп (в любом регистре)
+    is_offtopic = any(hashtag in text_lower for hashtag in ['#офтоп', '#оффтоп', '#офтоп', '#оффтоп'])
+
+    # Проверка наличия @username
     usernames = re.findall(r'@([a-zA-Z0-9_]{5,})', text)
     if not usernames:
         return False, "❌ В сообщении отсутствует контактная информация (@username)."
 
-    # Проверка разрешенных действий
-    actions = ['продам', 'обмен', 'куплю', 'продаю', 'обменяю', 'покупка', 'продажа']
-    if not any(action in text_lower for action in actions):
-        return False, "❌ Укажите действие: 'продам', 'обмен' или 'куплю'."
+    # Проверка действия и привязок только если нет хэштега #офтоп
+    if not is_offtopic:
+        actions = ['продам', 'обмен', 'куплю', 'продаю', 'обменяю', 'покупка', 'продажа']
+        if not any(action in text_lower for action in actions):
+            return False, "❌ Укажите действие: 'продам', 'обмен' или 'куплю'."
 
-    # Проверка информации о почте
-    mail_keywords = ['почта', 'почту', 'указ', 'утер', 'утерь', 'утеря', 'оки', 'ок ру', 'ок.ру', 'одноклассники', 'спакес', 'однокласники', 'одноклассника', 'однокласника', 'одноклассников', 'однокласников']
-    if not any(keyword in text_lower for keyword in mail_keywords):
-        return False, "❌ Укажите информацию о привязках."
+        mail_keywords = ['почта', 'почту', 'указ', 'утер', 'утерь', 'утеря', 'оки', 'ок ру', 'ок.ру', 'одноклассники', 'спакес', 'однокласники', 'одноклассника', 'однокласника', 'одноклассников', 'однокласников']
+        if not any(keyword in text_lower for keyword in mail_keywords):
+            return False, "❌ Укажите информацию о привязках."
 
-    # Проверка на капс
+    # Остальные проверки выполняются всегда
     if sum(c.isupper() for c in text) / len(text) > 0.7 and len(text) > 10:
         return False, "❌ Слишком много текста в верхнем регистре (капс)."
 
-    # Проверка на мат
     if any(word in text_lower for word in FORBIDDEN_WORDS):
         return False, "❌ Обнаружен мат. Уберите его."
 
-    # Проверка ссылок
     if re.search(r'(https?://|www\.|\.com|\.ru|\.org|t\.me/[a-zA-Z0-9_]+)', text) and not re.search(
             r't\.me/shop_mrush1', text):
         return False, "❌ Ссылки запрещены (кроме t.me/shop_mrush1)."
 
-    # Проверка упоминаний ботов
     if re.search(r'@[a-zA-Z0-9_]*bot\b', text_lower):
         return False, "❌ Упоминания ботов запрещены."
 
-    # Проверка разрешенных юзернеймов
     for username in usernames:
         username_lower = username.lower()
         if username_lower.endswith("bot"):
@@ -206,12 +204,10 @@ async def handle_post(update: Update, context: ContextTypes):
     text = update.message.text or update.message.caption or ""
     user_username = update.message.from_user.username
 
-    # Проверка рабочего времени
     if not is_within_working_hours():
         await update.message.reply_text("⏰ Бот работает с 8:00 до 23:00. Пожалуйста, напишите позже.")
         return
 
-    # Проверка подписки и блокировки перед каждой публикацией
     subscription_ok, subscription_msg = await check_subscription_and_block(context, user_id)
     if not subscription_ok:
         await update.message.reply_text(
@@ -223,19 +219,16 @@ async def handle_post(update: Update, context: ContextTypes):
         )
         return
 
-    # Проверка лимитов и дубликатов
     limit_ok, limit_msg = check_post_limit_and_duplicates(user_id, text)
     if not limit_ok:
         await update.message.reply_text(limit_msg, reply_markup=MAIN_MENU)
         return
 
-    # Проверка содержания сообщения
     content_ok, content_msg = check_message(text, user_username)
     if not content_ok:
         await update.message.reply_text(content_msg, reply_markup=MAIN_MENU)
         return
 
-    # Проверка прикрепленных файлов
     photos = update.message.photo
     document = update.message.document
     if document and not check_file_extension(document.file_name):
@@ -245,7 +238,6 @@ async def handle_post(update: Update, context: ContextTypes):
         )
         return
 
-    # Публикация объявления
     try:
         if photos:
             await context.bot.send_photo(
